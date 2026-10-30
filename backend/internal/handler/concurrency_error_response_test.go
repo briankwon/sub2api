@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/service"
+
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -137,4 +139,13 @@ func TestGoogleConcurrencyError(t *testing.T) {
 			require.Equal(t, tt.wantMessage, body.Error.Message)
 		})
 	}
+}
+
+/* A saturated key is a client limit, while failed protection is a service error. */
+func TestAPIKeyConcurrencyErrorResponse(t *testing.T) {
+	status, kind, code, message := concurrencyErrorResponse(service.ErrAPIKeyConcurrencyLimitExceeded, "user")
+	require.Equal(t, http.StatusTooManyRequests, status)
+	require.Equal(t, "rate_limit_error", kind)
+	require.Equal(t, "api_key_concurrency_limit", code)
+	require.Contains(t, message, "API key")
 }

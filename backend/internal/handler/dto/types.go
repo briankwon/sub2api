@@ -54,6 +54,12 @@ type AdminUser struct {
 }
 
 type APIKey struct {
+	/*
+	 * ConcurrencyLimit is the simple-mode request concurrency cap for this key.
+	 * Zero adds no key cap; user and upstream account limits still apply.
+	 */
+	ConcurrencyLimit int `json:"concurrency_limit"`
+
 	ID          int64      `json:"id"`
 	UserID      int64      `json:"user_id"`
 	Key         string     `json:"key"`

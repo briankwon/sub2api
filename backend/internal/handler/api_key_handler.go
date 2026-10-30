@@ -32,6 +32,12 @@ func NewAPIKeyHandler(apiKeyService *service.APIKeyService) *APIKeyHandler {
 
 // CreateAPIKeyRequest represents the create API key request payload
 type CreateAPIKeyRequest struct {
+	/*
+	 * ConcurrencyLimit is the simple-mode request concurrency cap for this key.
+	 * Zero adds no key cap; user and upstream account limits still apply.
+	 */
+	ConcurrencyLimit int `json:"concurrency_limit"`
+
 	Name          string   `json:"name" binding:"required"`
 	GroupID       *int64   `json:"group_id"`        // nullable
 	CustomKey     *string  `json:"custom_key"`      // 可选的自定义key
@@ -48,6 +54,12 @@ type CreateAPIKeyRequest struct {
 
 // UpdateAPIKeyRequest represents the update API key request payload
 type UpdateAPIKeyRequest struct {
+	/*
+	 * ConcurrencyLimit is the simple-mode request concurrency cap for this key.
+	 * Zero adds no key cap; user and upstream account limits still apply.
+	 */
+	ConcurrencyLimit *int `json:"concurrency_limit"`
+
 	Name        string    `json:"name"`
 	GroupID     *int64    `json:"group_id"`
 	Status      string    `json:"status" binding:"omitempty,oneof=active inactive"`
@@ -67,6 +79,10 @@ type UpdateAPIKeyRequest struct {
 func validAPIKeyLimit(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) && v >= 0 }
 
 func validateAPIKeyCreateRequest(req CreateAPIKeyRequest) error {
+	if req.ConcurrencyLimit < 0 || req.ConcurrencyLimit > service.APIKeyMaxConcurrency {
+		return errors.New("concurrency_limit must be an integer between 0 and 2147483647")
+	}
+
 	if req.Quota != nil && !validAPIKeyLimit(*req.Quota) {
 		return errors.New("invalid quota")
 	}
@@ -86,6 +102,10 @@ func validateAPIKeyCreateRequest(req CreateAPIKeyRequest) error {
 }
 
 func validateAPIKeyUpdateRequest(req UpdateAPIKeyRequest) error {
+	if req.ConcurrencyLimit != nil && (*req.ConcurrencyLimit < 0 || *req.ConcurrencyLimit > service.APIKeyMaxConcurrency) {
+		return errors.New("concurrency_limit must be an integer between 0 and 2147483647")
+	}
+
 	if req.Quota != nil && !validAPIKeyLimit(*req.Quota) {
 		return errors.New("invalid quota")
 	}
@@ -197,12 +217,13 @@ func (h *APIKeyHandler) Create(c *gin.Context) {
 	}
 
 	svcReq := service.CreateAPIKeyRequest{
-		Name:          req.Name,
-		GroupID:       req.GroupID,
-		CustomKey:     req.CustomKey,
-		IPWhitelist:   req.IPWhitelist,
-		IPBlacklist:   req.IPBlacklist,
-		ExpiresInDays: req.ExpiresInDays,
+		ConcurrencyLimit: req.ConcurrencyLimit,
+		Name:             req.Name,
+		GroupID:          req.GroupID,
+		CustomKey:        req.CustomKey,
+		IPWhitelist:      req.IPWhitelist,
+		IPBlacklist:      req.IPBlacklist,
+		ExpiresInDays:    req.ExpiresInDays,
 	}
 	if req.Quota != nil {
 		svcReq.Quota = *req.Quota
@@ -252,6 +273,7 @@ func (h *APIKeyHandler) Update(c *gin.Context) {
 	}
 
 	svcReq := service.UpdateAPIKeyRequest{
+		ConcurrencyLimit:    req.ConcurrencyLimit,
 		IPWhitelist:         req.IPWhitelist,
 		IPBlacklist:         req.IPBlacklist,
 		Quota:               req.Quota,

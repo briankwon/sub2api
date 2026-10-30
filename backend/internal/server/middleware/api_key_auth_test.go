@@ -1792,3 +1792,40 @@ func (r *stubUserSubscriptionRepo) IncrementUsage(ctx context.Context, id int64,
 func (r *stubUserSubscriptionRepo) BatchUpdateExpiredStatus(ctx context.Context) (int64, error) {
 	return 0, errors.New("not implemented")
 }
+
+/* The stored cap is effective only in simple mode, for both auth middlewares. */
+func TestAPIKeyAuthConcurrencyPolicyModeGate(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, mode := range []string{config.RunModeSimple, config.RunModeStandard} {
+		for _, google := range []bool{false, true} {
+			t.Run(mode+map[bool]string{false: "/openai", true: "/google"}[google], func(t *testing.T) {
+				user := &service.User{ID: 7, Role: service.RoleUser, Status: service.StatusActive, Balance: 10, Concurrency: 4}
+				key := &service.APIKey{ID: 1, UserID: 7, Key: "mode-key", Status: service.StatusActive, ConcurrencyLimit: 2, User: user}
+				repo := &stubApiKeyRepo{getByKey: func(context.Context, string) (*service.APIKey, error) { return key, nil }}
+				cfg := &config.Config{RunMode: mode}
+				svc := service.NewAPIKeyService(repo, nil, nil, nil, nil, nil, cfg)
+				router := gin.New()
+				if google {
+					router.Use(gin.HandlerFunc(APIKeyAuthWithSubscriptionGoogle(svc, nil, cfg)))
+				} else {
+					router.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(svc, nil, cfg)))
+				}
+				router.GET("/check", func(c *gin.Context) {
+					limit := service.APIKeyConcurrencyLimit(c.Request.Context(), key.ID)
+					if mode == config.RunModeSimple {
+						require.Equal(t, 2, limit)
+					} else {
+						require.Zero(t, limit)
+					}
+					c.Status(http.StatusOK)
+				})
+				req := httptest.NewRequest(http.MethodGet, "/check", nil)
+				req.Header.Set("x-api-key", key.Key)
+				req.Header.Set("x-goog-api-key", key.Key)
+				w := httptest.NewRecorder()
+				router.ServeHTTP(w, req)
+				require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+			})
+		}
+	}
+}

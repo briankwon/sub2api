@@ -135,6 +135,8 @@ var (
 		local userRegular = KEYS[3]
 		local userLive = KEYS[4]
 		local apiLive = KEYS[5]
+        local apiRegular = KEYS[6]
+        local apiMax = tonumber(ARGV[6]) or 0
 		local accountMax = tonumber(ARGV[1])
 		local userMax = tonumber(ARGV[2])
 		local ttl = tonumber(ARGV[3])
@@ -154,6 +156,8 @@ var (
 		if replacing == 1 then allowance = 1 end
 		if accountMax > 0 and accountCount >= accountMax + allowance then return 0 end
 		if userMax > 0 and userCount >= userMax + allowance then return 0 end
+        local apiCount = redis.call('ZCARD', apiRegular) + redis.call('ZCARD', apiLive)
+        if apiMax > 0 and apiCount >= apiMax + allowance then return 0 end
 		redis.call('ZADD', accountLive, now, leaseID)
 		redis.call('ZADD', userLive, now, leaseID)
 		redis.call('ZADD', apiLive, now, leaseID)
@@ -739,6 +743,21 @@ func (c *concurrencyCache) GetUserConcurrency(ctx context.Context, userID int64)
 	return result, nil
 }
 
+/*
+ * AcquireAPIKeySlot checks and reserves capacity in one Redis operation.
+ * It shares the statistics namespace and includes Live slots in the count.
+ */
+func (c *concurrencyCache) AcquireAPIKeySlot(ctx context.Context, apiKeyID int64, maxConcurrency int, requestID string) (bool, error) {
+	result, _, err := runScriptInt64Pair(ctx, c.rdb, acquireScript, []string{apiKeySlotKey(apiKeyID), liveAPIKeySlotKeyPrefix + strconv.FormatInt(apiKeyID, 10)}, maxConcurrency, c.slotTTLSeconds, requestID)
+	return result == 1, err
+}
+
+/* RefreshAPIKeySlot retains capacity for an active long-running request. */
+func (c *concurrencyCache) RefreshAPIKeySlot(ctx context.Context, apiKeyID int64, requestID string) (bool, error) {
+	result, err := refreshLiveLeaseScript.Run(ctx, c.rdb, []string{apiKeySlotKey(apiKeyID)}, c.slotTTLSeconds, requestID).Int()
+	return result == 1, err
+}
+
 func (c *concurrencyCache) TrackAPIKeySlot(ctx context.Context, apiKeyID int64, requestID string) error {
 	key := apiKeySlotKey(apiKeyID)
 	_, err := trackSlotScript.Run(ctx, c.rdb, []string{key}, c.slotTTLSeconds, requestID).Result()
@@ -815,7 +834,8 @@ func (c *concurrencyCache) AcquireLiveLease(
 		userSlotKey(userID),
 		liveUserSlotKey(userID),
 		liveAPIKeySlotKey(apiKeyID),
-	}, accountMax, userMax, liveLeaseTTLSeconds, leaseID, replacing).Int()
+		apiKeySlotKey(apiKeyID),
+	}, accountMax, userMax, liveLeaseTTLSeconds, leaseID, replacing, service.APIKeyConcurrencyLimit(ctx, apiKeyID)).Int()
 	return result == 1, err
 }
 

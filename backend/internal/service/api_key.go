@@ -14,6 +14,11 @@ const (
 	StatusAPIKeyExpired        = "expired"
 )
 
+/*
+ * APIKeyMaxConcurrency matches the PostgreSQL INTEGER storage bound.
+ */
+const APIKeyMaxConcurrency = 1<<31 - 1
+
 // Rate limit window durations
 const (
 	RateLimitWindow5h = 5 * time.Hour
@@ -46,6 +51,11 @@ type APIKey struct {
 	User                *User
 	Group               *Group
 	CurrentConcurrency  int
+	/*
+	 * ConcurrencyLimit is the simple-mode request concurrency cap for this key.
+	 * Zero adds no key cap; user and upstream account limits still apply.
+	 */
+	ConcurrencyLimit int
 
 	// Quota fields
 	Quota     float64    // Quota limit in USD (0 = unlimited)

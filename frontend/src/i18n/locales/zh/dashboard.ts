@@ -66,6 +66,9 @@ export default {
 
   // API Keys
   keys: {
+    concurrencyLimit: '并发上限',
+    concurrencyLimitHint: '仅简易模式生效。0 表示不额外限制，仍受所属用户和上游账号的总并发限制。',
+    concurrencyLimitInvalid: '并发上限必须是 0 到 2147483647 的整数。',
     title: 'API 密钥',
     description: '管理您的 API 密钥和访问令牌',
     searchPlaceholder: '搜索名称或Key...',

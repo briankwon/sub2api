@@ -38,6 +38,10 @@ func (APIKey) Fields() []ent.Field {
 			MaxLen(128).
 			NotEmpty().
 			Unique(),
+		field.Int("concurrency_limit").
+			Default(0).
+			NonNegative().
+			Comment("Simple-mode concurrent request limit; 0 adds no key limit"),
 		field.String("name").
 			MaxLen(100).
 			NotEmpty(),

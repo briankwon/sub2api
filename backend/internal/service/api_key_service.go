@@ -64,6 +64,8 @@ const (
 // 若编辑 Key 时无条件整行回写，并发累计的配额与限流计数就会被旧快照覆盖。
 // 因此调用方必须显式声明要改的列。
 type APIKeyUpdateFields struct {
+	ConcurrencyLimit bool
+
 	Name      bool
 	Status    bool
 	Quota     bool
@@ -214,6 +216,12 @@ type APIKeyAuthCacheInvalidator interface {
 
 // CreateAPIKeyRequest 创建API Key请求
 type CreateAPIKeyRequest struct {
+	/*
+	 * ConcurrencyLimit is the simple-mode request concurrency cap for this key.
+	 * Zero adds no key cap; user and upstream account limits still apply.
+	 */
+	ConcurrencyLimit int `json:"concurrency_limit"`
+
 	Name        string   `json:"name"`
 	GroupID     *int64   `json:"group_id"`
 	CustomKey   *string  `json:"custom_key"`   // 可选的自定义key
@@ -232,6 +240,12 @@ type CreateAPIKeyRequest struct {
 
 // UpdateAPIKeyRequest 更新API Key请求
 type UpdateAPIKeyRequest struct {
+	/*
+	 * ConcurrencyLimit is the simple-mode request concurrency cap for this key.
+	 * Zero adds no key cap; user and upstream account limits still apply.
+	 */
+	ConcurrencyLimit *int `json:"concurrency_limit"`
+
 	Name        *string   `json:"name"`
 	GroupID     *int64    `json:"group_id"`
 	Status      *string   `json:"status"`
@@ -259,6 +273,10 @@ func validateAPIKeyLimit(v float64) error {
 }
 
 func validateCreateAPIKeyRequest(req CreateAPIKeyRequest) error {
+	if req.ConcurrencyLimit < 0 || req.ConcurrencyLimit > APIKeyMaxConcurrency {
+		return infraerrors.BadRequest("API_KEY_CONCURRENCY_INVALID", "concurrency_limit must be an integer between 0 and 2147483647")
+	}
+
 	for _, v := range []float64{req.Quota, req.RateLimit5h, req.RateLimit1d, req.RateLimit7d} {
 		if err := validateAPIKeyLimit(v); err != nil {
 			return err
@@ -271,6 +289,10 @@ func validateCreateAPIKeyRequest(req CreateAPIKeyRequest) error {
 }
 
 func validateUpdateAPIKeyRequest(req UpdateAPIKeyRequest) error {
+	if req.ConcurrencyLimit != nil && (*req.ConcurrencyLimit < 0 || *req.ConcurrencyLimit > APIKeyMaxConcurrency) {
+		return infraerrors.BadRequest("API_KEY_CONCURRENCY_INVALID", "concurrency_limit must be an integer between 0 and 2147483647")
+	}
+
 	for _, v := range []*float64{req.Quota, req.RateLimit5h, req.RateLimit1d, req.RateLimit7d} {
 		if v != nil {
 			if err := validateAPIKeyLimit(*v); err != nil {
@@ -569,18 +591,19 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 
 	// 创建API Key记录
 	apiKey := &APIKey{
-		UserID:      userID,
-		Key:         key,
-		Name:        html.EscapeString(req.Name),
-		GroupID:     req.GroupID,
-		Status:      StatusActive,
-		IPWhitelist: req.IPWhitelist,
-		IPBlacklist: req.IPBlacklist,
-		Quota:       req.Quota,
-		QuotaUsed:   0,
-		RateLimit5h: req.RateLimit5h,
-		RateLimit1d: req.RateLimit1d,
-		RateLimit7d: req.RateLimit7d,
+		ConcurrencyLimit: req.ConcurrencyLimit,
+		UserID:           userID,
+		Key:              key,
+		Name:             html.EscapeString(req.Name),
+		GroupID:          req.GroupID,
+		Status:           StatusActive,
+		IPWhitelist:      req.IPWhitelist,
+		IPBlacklist:      req.IPBlacklist,
+		Quota:            req.Quota,
+		QuotaUsed:        0,
+		RateLimit5h:      req.RateLimit5h,
+		RateLimit1d:      req.RateLimit1d,
+		RateLimit7d:      req.RateLimit7d,
 	}
 
 	// Set expiration time if specified
@@ -820,6 +843,10 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 	// fields 只登记本次请求真正要改的列。quota_used 与 usage_5h/1d/7d 由计费热路径
 	// 原子递增，除非用户显式点了"重置"，否则这里不用快照把它们写回去。
 	var fields APIKeyUpdateFields
+	if req.ConcurrencyLimit != nil {
+		apiKey.ConcurrencyLimit = *req.ConcurrencyLimit
+		fields.ConcurrencyLimit = true
+	}
 	// 下面若干分支会顺带把 Status 改回 active（配额扩容、清除过期等），
 	// 所以用原始值比对来决定是否写 status，而不是只看 req.Status。
 	originalStatus := apiKey.Status

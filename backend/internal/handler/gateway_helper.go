@@ -272,6 +272,31 @@ func (h *ConcurrencyHelper) AcquireUserSlotWithWait(c *gin.Context, userID int64
 }
 
 func (h *ConcurrencyHelper) acquireUserSlotWithWaitTimeout(c *gin.Context, userID int64, maxConcurrency int, timeout time.Duration, isStream bool, streamStarted *bool) (func(), error) {
+	originalRequest := c.Request
+	reservedCtx, releaseKey, err := h.concurrencyService.ReserveAPIKeySlot(originalRequest.Context())
+	if err != nil {
+		return nil, err
+	}
+	c.Request = originalRequest.WithContext(reservedCtx)
+	defer func() {
+		c.Request = originalRequest
+	}()
+	releaseUser, err := h.acquireUserSlotOnlyWithWaitTimeout(c, userID, maxConcurrency, timeout, isStream, streamStarted)
+	if err != nil {
+		releaseKey()
+		return nil, err
+	}
+	return wrapReleaseOnDone(reservedCtx, func() {
+		releaseUser()
+		releaseKey()
+	}), nil
+}
+
+/*
+ * acquireUserSlotOnlyWithWaitTimeout keeps the existing user queue semantics;
+ * its caller owns the Key lease throughout the queue and the accepted request.
+ */
+func (h *ConcurrencyHelper) acquireUserSlotOnlyWithWaitTimeout(c *gin.Context, userID int64, maxConcurrency int, timeout time.Duration, isStream bool, streamStarted *bool) (func(), error) {
 	ctx := c.Request.Context()
 
 	// Try to acquire immediately

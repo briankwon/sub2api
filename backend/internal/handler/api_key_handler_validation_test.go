@@ -6,6 +6,8 @@ import (
 	"math"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/service"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -39,5 +41,17 @@ func TestValidateAPIKeyUpdateRequest(t *testing.T) {
 		{RateLimit7d: &negative},
 	} {
 		require.Error(t, validateAPIKeyUpdateRequest(req))
+	}
+}
+
+/* Both HTTP operations reject limits the INTEGER column cannot store. */
+func TestValidateAPIKeyConcurrencyLimit(t *testing.T) {
+	for _, limit := range []int{0, 1, service.APIKeyMaxConcurrency} {
+		require.NoError(t, validateAPIKeyCreateRequest(CreateAPIKeyRequest{ConcurrencyLimit: limit}))
+		require.NoError(t, validateAPIKeyUpdateRequest(UpdateAPIKeyRequest{ConcurrencyLimit: &limit}))
+	}
+	for _, limit := range []int{-1, service.APIKeyMaxConcurrency + 1} {
+		require.Error(t, validateAPIKeyCreateRequest(CreateAPIKeyRequest{ConcurrencyLimit: limit}))
+		require.Error(t, validateAPIKeyUpdateRequest(UpdateAPIKeyRequest{ConcurrencyLimit: &limit}))
 	}
 }

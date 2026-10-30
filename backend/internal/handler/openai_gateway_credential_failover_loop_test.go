@@ -935,10 +935,15 @@ func newGrokCredentialFailoverHandler(t *testing.T, mode string) (*OpenAIGateway
 	}
 	h := NewOpenAIGatewayHandler(gateway, service.NewConcurrencyService(cache), billingCache, &service.APIKeyService{}, nil, nil, nil, nil, cfg)
 	apiKey := &service.APIKey{
-		ID: 902, GroupID: &groupID,
+		Key: "credential-failover-test-key",
+		ID:  902, GroupID: &groupID,
 		User:  &service.User{ID: 903, Status: service.StatusActive},
 		Group: &service.Group{ID: groupID, Platform: service.PlatformGrok, Status: service.StatusActive, AllowImageGeneration: true},
 	}
+	/*
+	 * WS admissions reload the authenticated Key before each turn.
+	 */
+	h.apiKeyService = service.NewAPIKeyService(&wsConcurrencyPolicyRepo{key: apiKey}, nil, nil, nil, nil, nil, &config.Config{})
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		c.Set(string(middleware.ContextKeyAPIKey), apiKey)

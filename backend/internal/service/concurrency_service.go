@@ -378,7 +378,7 @@ func (s *ConcurrencyService) AcquireAccountSlot(ctx context.Context, accountID i
 // AcquireUserSlot attempts to acquire a concurrency slot for a user.
 // If the user is at max concurrency, it waits until a slot is available or timeout.
 // Returns a release function that MUST be called when the request completes.
-func (s *ConcurrencyService) AcquireUserSlot(ctx context.Context, userID int64, maxConcurrency int) (*AcquireResult, error) {
+func (s *ConcurrencyService) acquireUserSlot(ctx context.Context, userID int64, maxConcurrency int) (*AcquireResult, error) {
 	// If maxConcurrency is 0 or negative, no limit
 	if maxConcurrency <= 0 {
 		return &AcquireResult{
@@ -418,6 +418,11 @@ func (s *ConcurrencyService) AcquireUserSlot(ctx context.Context, userID int64, 
 // applying key-level concurrency limits. It is fail-open: Redis errors are
 // logged and return a no-op release function.
 func (s *ConcurrencyService) TrackAPIKeySlot(ctx context.Context, apiKeyID int64) func() {
+	/* Limited requests already reserved the same slot during user admission. */
+	if APIKeyConcurrencyLimit(ctx, apiKeyID) > 0 {
+		return func() {}
+	}
+
 	if s == nil || s.cache == nil || apiKeyID <= 0 {
 		return func() {}
 	}

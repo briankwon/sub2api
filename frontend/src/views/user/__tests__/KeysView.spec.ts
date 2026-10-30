@@ -7,6 +7,7 @@ import { keysAPI } from '@/api'
 import KeysView from '../KeysView.vue'
 
 const {
+  authState,
   listKeys,
   updateKey,
   getPublicSettings,
@@ -19,6 +20,7 @@ const {
   isCurrentStep,
   nextStep,
 } = vi.hoisted(() => ({
+  authState: { isSimpleMode: false },
   listKeys: vi.fn(),
   updateKey: vi.fn(),
   getPublicSettings: vi.fn(),
@@ -77,6 +79,8 @@ vi.mock('@/api', () => ({
     getUserGroupRates,
   },
 }))
+
+vi.mock('@/stores/auth', () => ({ useAuthStore: () => authState }))
 
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({
@@ -268,6 +272,7 @@ const getButtonByText = (wrapper: VueWrapper, text: string) => {
 
 describe('user KeysView column settings', () => {
   beforeEach(() => {
+    authState.isSimpleMode = false
     localStorage.clear()
 
     listKeys.mockReset()
@@ -501,6 +506,73 @@ describe('user KeysView column settings', () => {
     const wrapper = await mountView()
 
     expect(wrapper.get('[data-test="current-concurrency"]').text()).toBe('3')
+  })
+
+  describe('simple mode concurrency settings', () => {
+    beforeEach(() => {
+      getAvailableGroups.mockResolvedValue([{ id: 1, name: 'OpenAI', platform: 'openai', subscription_type: 'standard', rate_multiplier: 1 }])
+      listKeys.mockResolvedValue({ items: [{ ...createApiKey(), group_id: 1 }], total: 1, page: 1, page_size: 20, pages: 1 })
+    })
+
+    it('shows and submits the concurrency cap only in simple mode', async () => {
+      authState.isSimpleMode = true
+      listKeys.mockResolvedValue({ items: [{ ...createApiKey(), group_id: 1, concurrency_limit: 5 }], total: 1, page: 1, page_size: 20, pages: 1 })
+      const wrapper = await mountView()
+      expect(wrapper.get('[data-test="current-concurrency"]').text()).toBe('3 / 5')
+      await getButtonByText(wrapper, 'common.edit').trigger('click')
+      const input = wrapper.get('[data-test="key-concurrency-limit"]')
+      expect((input.element as HTMLInputElement).value).toBe('5')
+      await input.setValue(2)
+      await wrapper.get('#key-form').trigger('submit')
+      await flushPromises()
+      expect(updateKey).toHaveBeenCalledWith(1, expect.objectContaining({ concurrency_limit: 2 }))
+    })
+
+    it('submits a cap when creating a simple-mode key', async () => {
+      authState.isSimpleMode = true
+      const wrapper = await mountView()
+      await wrapper.get('[data-tour="keys-create-btn"]').trigger('click')
+      await wrapper.get('[data-tour="key-form-name"]').setValue('Teammate')
+      const selects = wrapper.findAllComponents({ name: 'Select' })
+      await selects[selects.length - 1].vm.$emit('update:modelValue', 1)
+      await wrapper.get('[data-test="key-concurrency-limit"]').setValue(3)
+      vi.mocked(keysAPI.create).mockResolvedValue({ ...createApiKey(), concurrency_limit: 3 })
+      await wrapper.get('#key-form').trigger('submit')
+      await flushPromises()
+      expect(keysAPI.create).toHaveBeenCalledOnce()
+      expect(vi.mocked(keysAPI.create).mock.calls[0][8]).toBe(3)
+    })
+
+    it('hides the concurrency cap and leaves it untouched in standard mode', async () => {
+      const wrapper = await mountView()
+      await getButtonByText(wrapper, 'common.edit').trigger('click')
+      expect(wrapper.find('[data-test="key-concurrency-limit"]').exists()).toBe(false)
+      await wrapper.get('#key-form').trigger('submit')
+      await flushPromises()
+      expect(updateKey).toHaveBeenCalled()
+      expect(updateKey.mock.calls[0][1]).not.toHaveProperty('concurrency_limit')
+    })
+
+    it.each([-1, 1.5, 2147483648])('rejects an invalid simple-mode cap: %s', async (limit) => {
+      authState.isSimpleMode = true
+      const wrapper = await mountView()
+      await getButtonByText(wrapper, 'common.edit').trigger('click')
+      await wrapper.get('[data-test="key-concurrency-limit"]').setValue(limit)
+      await wrapper.get('#key-form').trigger('submit')
+      expect(updateKey).not.toHaveBeenCalled()
+      expect(showError).toHaveBeenCalledWith('keys.concurrencyLimitInvalid')
+    })
+
+    it('allows clearing a key cap without removing the parent user cap', async () => {
+      authState.isSimpleMode = true
+      const wrapper = await mountView()
+      await getButtonByText(wrapper, 'common.edit').trigger('click')
+      await wrapper.get('[data-test="key-concurrency-limit"]').setValue(0)
+      await wrapper.get('#key-form').trigger('submit')
+      await flushPromises()
+      expect(updateKey).toHaveBeenCalledWith(1, expect.objectContaining({ concurrency_limit: 0 }))
+    })
+
   })
 
   it('marks current concurrency as sortable', async () => {

@@ -195,7 +195,7 @@
             </div>
           </template>
 
-          <template #cell-current_concurrency="{ value }">
+          <template #cell-current_concurrency="{ value, row }">
             <span
               :class="[
                 'inline-flex min-w-8 items-center justify-center rounded px-2 py-1 text-sm font-semibold tabular-nums',
@@ -204,7 +204,7 @@
                   : 'bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-dark-400'
               ]"
             >
-              {{ value ?? 0 }}
+              {{ value ?? 0 }}<template v-if="authStore.isSimpleMode"> / {{ row.concurrency_limit || '—' }}</template>
             </span>
           </template>
 
@@ -666,6 +666,22 @@
               <p class="input-hint">{{ t('keys.ipBlacklistHint') }}</p>
             </div>
           </div>
+        </div>
+
+        <div v-if="authStore.isSimpleMode">
+          <label for="key-concurrency-limit" class="input-label">{{ t('keys.concurrencyLimit') }}</label>
+          <input
+            id="key-concurrency-limit"
+            v-model.number="formData.concurrency_limit"
+            data-test="key-concurrency-limit"
+            type="number"
+            min="0"
+            max="2147483647"
+            step="1"
+            required
+            class="input"
+          />
+          <p class="input-hint">{{ t('keys.concurrencyLimitHint') }}</p>
         </div>
 
         <!-- Quota Limit Section -->
@@ -1208,6 +1224,7 @@ import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 
 const { t } = useI18n()
 import { keysAPI, authAPI, usageAPI, userGroupsAPI } from '@/api'
+import { useAuthStore } from '@/stores/auth'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import BulkEditKeysModal from '@/components/keys/BulkEditKeysModal.vue'
@@ -1259,6 +1276,7 @@ interface GroupOption {
 }
 
 const appStore = useAppStore()
+const authStore = useAuthStore()
 const onboardingStore = useOnboardingStore()
 const { copyToClipboard: clipboardCopy } = useClipboard()
 
@@ -1430,6 +1448,7 @@ const setGroupButtonRef = (keyId: number, el: Element | ComponentPublicInstance 
 }
 
 const formData = ref({
+  concurrency_limit: 0,
   name: '',
   group_id: null as number | null,
   status: 'active' as 'active' | 'inactive',
@@ -1698,6 +1717,7 @@ const editKey = (key: ApiKey) => {
   const hasIPRestriction = (key.ip_whitelist?.length > 0) || (key.ip_blacklist?.length > 0)
   const hasExpiration = !!key.expires_at
   formData.value = {
+    concurrency_limit: key.concurrency_limit ?? 0,
     name: key.name,
     group_id: key.group_id,
     status: key.status === 'quota_exhausted' || key.status === 'expired' ? 'inactive' : key.status,
@@ -1816,6 +1836,11 @@ const handleSubmit = async () => {
     }
   }
 
+  if (authStore.isSimpleMode && (!Number.isInteger(formData.value.concurrency_limit) || formData.value.concurrency_limit < 0 || formData.value.concurrency_limit > 2147483647)) {
+    appStore.showError(t('keys.concurrencyLimitInvalid'))
+    return
+  }
+
   // Parse IP lists only if IP restriction is enabled
   const parseIPList = (text: string): string[] =>
     text.split('\n').map(ip => ip.trim()).filter(ip => ip.length > 0)
@@ -1855,6 +1880,7 @@ const handleSubmit = async () => {
   try {
     if (showEditModal.value && selectedKey.value) {
       const updates: UpdateApiKeyRequest = {
+        ...(authStore.isSimpleMode ? { concurrency_limit: formData.value.concurrency_limit } : {}),
         name: formData.value.name,
         group_id: formData.value.group_id,
         ip_whitelist: ipWhitelist,
@@ -1880,7 +1906,8 @@ const handleSubmit = async () => {
         ipBlacklist,
         quota,
         expiresInDays,
-        rateLimitData
+        rateLimitData,
+        authStore.isSimpleMode ? formData.value.concurrency_limit : undefined
       )
       appStore.showSuccess(t('keys.keyCreatedSuccess'))
       // Only advance tour if active, on submit step, and creation succeeded
@@ -1924,6 +1951,7 @@ const closeModals = () => {
   showEditModal.value = false
   selectedKey.value = null
   formData.value = {
+    concurrency_limit: 0,
     name: '',
     group_id: null,
     status: 'active',

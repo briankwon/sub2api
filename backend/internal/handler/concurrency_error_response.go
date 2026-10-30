@@ -5,6 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+
+	"github.com/Wei-Shaw/sub2api/internal/service"
+	coderws "github.com/coder/websocket"
 )
 
 const statusClientClosedRequest = 499
@@ -15,6 +18,10 @@ const (
 )
 
 func concurrencyErrorResponse(err error, slotType string) (int, string, string, string) {
+	if errors.Is(err, service.ErrAPIKeyConcurrencyLimitExceeded) {
+		return http.StatusTooManyRequests, "rate_limit_error", "api_key_concurrency_limit", "API key concurrency limit exceeded, please retry later"
+	}
+
 	var waitQueueFullErr *WaitQueueFullError
 	if errors.As(err, &waitQueueFullErr) {
 		return http.StatusTooManyRequests, "rate_limit_error", gatewayQueueFullCode,
@@ -35,4 +42,24 @@ func concurrencyErrorResponse(err error, slotType string) (int, string, string, 
 	}
 
 	return http.StatusServiceUnavailable, "api_error", "", "Service temporarily unavailable, please retry later"
+}
+
+/*
+ * concurrencyWSCloseStatus distinguishes backpressure from internal failure.
+ */
+func concurrencyWSCloseStatus(err error) coderws.StatusCode {
+	if errors.Is(err, service.ErrAPIKeyConcurrencyLimitExceeded) {
+		return coderws.StatusTryAgainLater
+	}
+	return coderws.StatusInternalError
+}
+
+/*
+ * concurrencyWSReason exposes the Key limit without leaking backend errors.
+ */
+func concurrencyWSReason(err error) string {
+	if errors.Is(err, service.ErrAPIKeyConcurrencyLimitExceeded) {
+		return "api_key_concurrency_limit: too many concurrent requests, please retry later"
+	}
+	return "failed to acquire user concurrency slot"
 }

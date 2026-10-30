@@ -4,6 +4,12 @@ import "time"
 
 // APIKeyAuthSnapshot API Key 认证缓存快照（仅包含认证所需字段）
 type APIKeyAuthSnapshot struct {
+	/*
+	 * ConcurrencyLimit is the simple-mode request concurrency cap for this key.
+	 * Zero adds no key cap; user and upstream account limits still apply.
+	 */
+	ConcurrencyLimit int `json:"concurrency_limit"`
+
 	Version     int                      `json:"version"`
 	APIKeyID    int64                    `json:"api_key_id"`
 	UserID      int64                    `json:"user_id"`

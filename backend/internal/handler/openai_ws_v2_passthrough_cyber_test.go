@@ -29,6 +29,14 @@ type openAIWSPassthroughHandlerHarness struct {
 
 func newOpenAIWSPassthroughHandlerHarness(t *testing.T, upstreamURL string, settings ...map[string]string) *openAIWSPassthroughHandlerHarness {
 	t.Helper()
+	return newOpenAIWSPassthroughHandlerHarnessConfigured(t, upstreamURL, nil, settings...)
+}
+
+/*
+ * The typed hook configures dependencies before the handler goroutine starts.
+ */
+func newOpenAIWSPassthroughHandlerHarnessConfigured(t *testing.T, upstreamURL string, configure func(*OpenAIGatewayHandler, *service.APIKey), settings ...map[string]string) *openAIWSPassthroughHandlerHarness {
+	t.Helper()
 	gatewayCache := testutil.NewRedisGatewayCache(t)
 
 	settingRepo := &contentModerationHandlerSettingRepo{values: map[string]string{
@@ -101,6 +109,9 @@ func newOpenAIWSPassthroughHandlerHarness(t *testing.T, upstreamURL string, sett
 		Key:     "sk-handler-cyber-test",
 		GroupID: &groupID,
 		User:    &service.User{ID: 1751, Status: service.StatusActive},
+	}
+	if configure != nil {
+		configure(h, apiKey)
 	}
 	handlerDone := make(chan struct{})
 	router := gin.New()

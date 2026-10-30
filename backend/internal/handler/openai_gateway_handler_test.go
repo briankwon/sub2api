@@ -3054,6 +3054,7 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 	}
 
 	apiKey := &service.APIKey{
+		Key:     "ws-usage-test-key",
 		ID:      1801,
 		GroupID: &groupID,
 		User:    &service.User{ID: 1701, Status: service.StatusActive},
@@ -3069,6 +3070,12 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 	}
 	if tc.group != nil {
 		apiKey.Group = tc.group
+	}
+	if tc.apiKeyService == nil {
+		/*
+		 * Match middleware authentication with the per-turn Key refresh lookup.
+		 */
+		h.apiKeyService = service.NewAPIKeyService(&wsConcurrencyPolicyRepo{key: apiKey}, nil, nil, nil, nil, nil, &config.Config{})
 	}
 	router := gin.New()
 	router.Use(func(c *gin.Context) {

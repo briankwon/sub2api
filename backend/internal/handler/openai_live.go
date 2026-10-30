@@ -103,7 +103,12 @@ func (h *OpenAIGatewayHandler) Live(c *gin.Context) {
 		subject.Concurrency,
 	)
 	if err != nil {
-		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Live concurrency unavailable")
+		if errors.Is(err, service.ErrAPIKeyConcurrencyLimitExceeded) {
+			status, errType, _, message := concurrencyErrorResponse(err, "user")
+			h.errorResponse(c, status, errType, message)
+		} else {
+			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Live concurrency unavailable")
+		}
 		return
 	}
 	if !acquired {

@@ -66,6 +66,9 @@ export default {
 
   // API Keys
   keys: {
+    concurrencyLimit: 'Concurrency limit',
+    concurrencyLimitHint: 'Simple mode only. 0 adds no key cap; user and upstream account limits still apply.',
+    concurrencyLimitInvalid: 'Concurrency limit must be an integer from 0 to 2147483647.',
     title: 'API Keys',
     description: 'Manage your API keys and access tokens',
     searchPlaceholder: 'Search name or key...',

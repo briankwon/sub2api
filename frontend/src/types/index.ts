@@ -759,6 +759,8 @@ export interface ApiKey {
   expires_at: string | null // Expiration time (null = never expires)
   created_at: string
   updated_at: string
+  /** Simple-mode maximum in-flight requests; 0 adds no key cap. */
+  concurrency_limit?: number
   current_concurrency: number
   group?: Group
   rate_limit_5h: number
@@ -776,6 +778,8 @@ export interface ApiKey {
 }
 
 export interface CreateApiKeyRequest {
+  /** Simple-mode concurrent request cap; 0 adds no key cap. */
+  concurrency_limit?: number
   name: string
   group_id?: number | null
   custom_key?: string // Optional custom API Key
@@ -789,6 +793,8 @@ export interface CreateApiKeyRequest {
 }
 
 export interface UpdateApiKeyRequest {
+  /** Simple-mode concurrent request cap; 0 adds no key cap. */
+  concurrency_limit?: number
   name?: string
   group_id?: number | null
   status?: 'active' | 'inactive'
